@@ -102,6 +102,31 @@ def load_flickr30k(path):
     
     return data
 
+
+def get_embedding_matrix(path, tokenizer, dim, vocab_size):
+    assert dim in [50, 100, 200, 300], dim
+    # Load Glove vectors
+    text_file = os.path.join(path, 'glove.6B.{0}d.txt'.format(dim))
+    embeddings_index = {} # empty dictionary
+    f = open(text_file, encoding="utf-8")
+    for line in f:
+        values = line.split()
+        word = values[0]
+        coefs = np.asarray(values[1:], dtype='float32')
+        embeddings_index[word] = coefs
+    f.close()
+    print('Found %s word vectors.' % len(embeddings_index))
+    embedding_dim = dim
+    # Get 200-dim dense vector for each of the 10000 words in out vocabulary
+    embedding_matrix = np.zeros((vocab_size, embedding_dim))
+    for i, word in tokenizer.index_word.items():
+        embedding_vector = embeddings_index.get(word)
+        if embedding_vector is not None:
+            embedding_matrix[i] = embedding_vector
+        else:
+            print("excluding {0}".format(word))
+    return embedding_matrix, embedding_dim
+
 def convert_to_dataset(data, top_k, split_rate = 0.8):
     train_captions = []
     img_name_vector = []
@@ -116,6 +141,7 @@ def convert_to_dataset(data, top_k, split_rate = 0.8):
                                                       oov_token="<unk>",
                                                       lower = True,
                                                       filters='!"#$%&()*+.,-/:;=?@[\]^_`{|}~ ')
+                                                              #'!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n '
     tokenizer.fit_on_texts(train_captions)
     tokenizer.word_index['<pad>'] = 0
     tokenizer.index_word[0] = '<pad>'
@@ -125,7 +151,7 @@ def convert_to_dataset(data, top_k, split_rate = 0.8):
     cap_vector = tf.keras.preprocessing.sequence.pad_sequences(train_seqs, padding='post')
 
     # Calculates the max_length, which is used to store the attention weights
-    max_length = max(len(t) for t in train_seqs) #TODO RETURN?
+    max_length = max(len(t) for t in train_seqs)
     
     img_to_cap_vector = collections.defaultdict(list)
     for img, cap in zip(img_name_vector, cap_vector):
@@ -134,6 +160,41 @@ def convert_to_dataset(data, top_k, split_rate = 0.8):
     img_name_train, cap_train, img_name_val, cap_val = split_dataset(img_name_vector, cap_vector, split_rate)
     
     return img_name_train, cap_train, img_name_val, cap_val, tokenizer, max_length
+
+
+def split_dataset_tmp(img_name_vector, cap_vector, split_rate=0.8):
+    img_to_cap_vector = collections.defaultdict(list)
+    for img, cap in zip(img_name_vector, cap_vector):
+        img_to_cap_vector[img].append(cap)
+
+    # Create training and validation sets using an 80-20 split randomly.
+    img_keys = list(img_to_cap_vector.keys())
+    random.shuffle(img_keys)
+
+    slice_index = int(math.ceil(len(img_keys)*split_rate))
+    img_name_train_keys, img_name_val_keys = img_keys[:slice_index], img_keys[slice_index:]
+
+    img_name_train = []
+    cap_train = []
+    for imgt in img_name_train_keys:
+        for vec in img_to_cap_vector[imgt]:
+            for i in range(len(vec)):
+                arr = np.zeros(len(vec))
+                arr[:len(vec[:i+1])] = vec[:i+1]
+                img_name_train.append(imgt)
+                cap_train.append(arr)
+
+    img_name_val = []
+    cap_val = []
+    for imgv in img_name_val_keys:
+        for vec in img_to_cap_vector[imgv]:
+            for i in range(len(vec)):
+                arr = np.zeros(len(vec))
+                arr[:len(vec[:i+1])] = vec[:i+1]
+                img_name_val.append(imgv)
+                cap_val.append(arr)
+    return img_name_train, cap_train, img_name_val, cap_val
+
 
 def split_dataset(img_name_vector, cap_vector, split_rate=0.8):
     img_to_cap_vector = collections.defaultdict(list)
