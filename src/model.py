@@ -1,6 +1,5 @@
 import tensorflow as tf
 import time
-from create_dataset import create_dataset
 
 def loss_function(real, pred):
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False, reduction=tf.keras.losses.Reduction.NONE)
@@ -38,7 +37,7 @@ class model(tf.keras.Model):
         vocab_size = top_k + 1
         self.max_length = max_length
         self.cnn_model = CNN_model(image_shape, embedding_dim, 'cnn_model')
-        self.cnn_dropout = tf.keras.layers.Dropout(0.5, name='cnn_dropout')
+        #self.cnn_dropout = tf.keras.layers.Dropout(0.5, name='cnn_dropout')
         if embedding_matrix is None:
             self.word_embedding = tf.keras.layers.Embedding(input_dim=vocab_size, 
                                                             output_dim=embedding_dim,
@@ -51,7 +50,7 @@ class model(tf.keras.Model):
                                                             trainable=False,
                                                             mask_zero=False,
                                                             name='word_embedding')
-        self.embedding_dropout = tf.keras.layers.Dropout(0.5, name='embedding_dropout')
+        #self.embedding_dropout = tf.keras.layers.Dropout(0.5, name='embedding_dropout')
         self.lstm_units = lstm_units
         self.lstm = tf.keras.layers.LSTM(self.lstm_units,
                                          activation='tanh', 
@@ -64,14 +63,16 @@ class model(tf.keras.Model):
         self.softmax = tf.keras.layers.Softmax(name='softmax')
         self.loss_fn = loss_function
     
-    def call(self, inputs):
+    def call(self, inputs, training=False):
         img_tensor = inputs[0]
         cap_in = inputs[1]
         initial_state = self.reset_state(tf.shape(img_tensor)[0])
         img_feat = self.cnn_model(img_tensor) # Image feature
-        img_feat = self.cnn_dropout(img_feat)
+        if training:
+            img_feat = self.cnn_dropout(img_feat)
         ws = self.word_embedding(cap_in)
-        ws = self.embedding_dropout(ws)
+        if training:
+            ws = self.embedding_dropout(ws)
         lstm_input = tf.concat([img_feat, ws], axis=1)
         x, _, _ = self.lstm(lstm_input, initial_state = initial_state)
         _, x = tf.split(x, [1, self.max_length - 1], axis=-2)
@@ -171,13 +172,12 @@ class model(tf.keras.Model):
     def beam_search(data, k):
     ''' 
     
-    def predict(self, img_tensor, tokenizer, s_type='greedy'):
+    def predict(self, img_tensor, tokenizer, s_type='sampling'):
         assert img_tensor.shape[0] == 1, "Only support prediction for one image a the moment"
         result = []
         bs = img_tensor.shape[0]
         img_feat = self.cnn_model(img_tensor)
         cap_pred = tf.expand_dims([tokenizer.word_index['<start>']], 0)
-        #cap_pred = tf.repeat(cap_pred, bs, axis=0)
         initial_state = self.reset_state(bs)
         import numpy as np
         greedy = False
@@ -191,15 +191,14 @@ class model(tf.keras.Model):
             x = self.dense2(x)
             x = self.softmax(x)
             o.append(x)
-            if greedy:
+            if s_type == 'greedy':
                 predicted_id = np.argmax(x[0,-1,:].numpy())
             else:
                 predicted_id = tf.random.categorical(tf.math.log(x[:,-1,:]), 1)[0][0].numpy() #Sample, TODO BeamSearch?
-                #predicted_id = tf.random.categorical(x[:,-1,:], 1)[0][0].numpy()
             w = tokenizer.index_word[predicted_id]
             if w == '<end>':
-                return result, o
+                return result
             result.append(w)
             cap_pred = tf.concat([cap_pred, predicted_id[None,None,...]], axis=1)
 
-        return result, o
+        return result
