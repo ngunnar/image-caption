@@ -3,10 +3,10 @@ import tensorflow as tf
 import os
 import datetime
 
-from src.model import model, loss_function
+from src.model import Model, loss_function
 from src.create_dataset import create_dataset
-from src.dataLoader import DataLoader
-from src.CustomTensorboard import Tensorboard_callback
+from src.data_loader import DataLoader
+from src.custom_tensorboard import Tensorboard_callback
 
 def main(top_k, data_path, ds_size, embedding_dim, epochs, lr, batch_size):
     dataLoader = DataLoader(data_path, ds_size)
@@ -28,13 +28,21 @@ def main(top_k, data_path, ds_size, embedding_dim, epochs, lr, batch_size):
 
     buffer_size = 1000
     train_dataset = create_dataset(dataLoader.img_name_train, dataLoader.cap_train, batch_size, buffer_size)
-    val_dataset = create_dataset(dataLoader.img_name_val, dataLoader.cap_val, batch_size, buffer_size)
-    num_batches = int(len(dataLoader.cap_train)/batch_size)
+    t_img_file = dataLoader.img_name_train[0]
+    t_cap = dataLoader.org_data[t_img_file]
+    if len(dataLoader.img_name_val)>0:
+        v_img_file = dataLoader.img_name_val[0]
+        val_dataset = create_dataset(dataLoader.img_name_val, dataLoader.cap_val, batch_size, buffer_size)
+        v_cap = dataLoader.org_data[v_img_file]
+    else:
+        v_img_file = None
+        val_dataset = None
+        v_cap = None
     
     dt = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = "./logs/fit/" + dt
+    log_dir = "./logs/" + dt
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath='./Saved_models/best_{0}'.format(dt),
+        filepath='./Saved_models/{0}/best_model'.format(dt),
         save_weights_only=True,
         monitor='val_loss',
         mode='min',
@@ -43,15 +51,24 @@ def main(top_k, data_path, ds_size, embedding_dim, epochs, lr, batch_size):
     mirrored_strategy = tf.distribute.MirroredStrategy()
     batch_size *= mirrored_strategy.num_replicas_in_sync
     train_batches = int(len(dataLoader.cap_train)/batch_size)
-    val_batches = int(len(dataLoader.cap_val)/batch_size)
+    
+    if val_dataset is not None:
+        val_batches = int(len(dataLoader.cap_val)/batch_size)
+    else:
+        val_batches = None
+    
     with mirrored_strategy.scope():
-        m = model(image_shape, embedding_dim, lstm_units, top_k, max_length)
+        m = Model(image_shape, embedding_dim, lstm_units, top_k, max_length)
         tensorboard_callback = Tensorboard_callback(log_dir=log_dir,
-                                             t_img_file=dataLoader.img_name_train[0],
-                                             v_img_file=dataLoader.img_name_val[0],
-                                             model=m,
+                                                    t_img_file=t_img_file,
+                                                    t_cap = t_cap,
+                                                    v_img_file=v_img_file,
+                                                    v_cap = v_cap,
+                                                    model=m,
                                              tokenizer=dataLoader.tokenizer)
-        m.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=lr), loss = loss_function)
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+        m.compile(optimizer = optimizer, loss = loss_function)
         history = m.fit(train_dataset, 
                         epochs = epochs,
                         steps_per_epoch = train_batches,
@@ -59,7 +76,7 @@ def main(top_k, data_path, ds_size, embedding_dim, epochs, lr, batch_size):
                         callbacks = [tensorboard_callback, model_checkpoint_callback],
                         validation_data = val_dataset,
                         validation_steps = val_batches)
-        m.save_weights('./Saved_models/{0}'.format(dt))
+        m.save_weights('./Saved_models/{0}/model'.format(dt))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

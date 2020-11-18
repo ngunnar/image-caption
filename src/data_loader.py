@@ -1,4 +1,4 @@
-from .dataUtils import load_flickr30k, convert_to_dataset, get_embedding_matrix
+from .data_utils import load_flickr30k, convert_to_dataset, get_embedding_matrix
 
 class DataLoader():
     def __init__(self, path, size = 0):

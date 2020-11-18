@@ -203,7 +203,7 @@ def split_dataset(img_name_vector, cap_vector, split_rate=0.8):
 
     # Create training and validation sets using an 80-20 split randomly.
     img_keys = list(img_to_cap_vector.keys())
-    random.shuffle(img_keys)
+    #random.shuffle(img_keys)
 
     slice_index = int(math.ceil(len(img_keys)*split_rate))
     img_name_train_keys, img_name_val_keys = img_keys[:slice_index], img_keys[slice_index:]

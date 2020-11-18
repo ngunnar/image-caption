@@ -18,13 +18,11 @@ def input_generator(img_name_data, cap_data):
 def output_generator(cap_data):
     def gen():
         for cap in cap_data:
-            #cap = tf.convert_to_tensor(cap)
+            cap = tf.convert_to_tensor(cap)
             yield cap[1:]
     return gen
 
 def create_dataset(img_name_data, cap_data, batch_size, buffer_size):
-    #steps_per_epoch = int(len(dataLoader.cap_train)/batch_size)
-    #print("Number of steps per epoch {0}".format(steps_per_epoch))
     input_data = tf.data.Dataset.from_generator(
                 input_generator(img_name_data, cap_data),
                 output_types=(tf.float32, tf.float64),
